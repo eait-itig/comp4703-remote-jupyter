@@ -1,0 +1,17 @@
+[Unit]
+Description=monitors and starts remote jupyter notebook
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usr/local/lib/remote-jupyter-monitor
+ExecStartPre=rm -f /run/remote-jupyter.sock
+ExecStart=/usr/local/bin/puma -b unix:///run/remote-jupyter.sock -C config/puma.rb config/config.ru
+ExecStartPost=/bin/bash -c 'while ! [ -e /run/remote-jupyter.sock ]; do sleep 1; done'
+ExecStartPost=chown www-data /run/remote-jupyter.sock
+TimeoutSec=15
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
