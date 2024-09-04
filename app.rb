@@ -57,6 +57,22 @@ $poker = Thread.new do
     $log.error(output) if status.exitstatus != 0
     next unless status.exitstatus == 0
 
+    stdin, stdout, stderr, waiter = Open3.popen3('ssh', 'gpu')
+    stdin.puts "tmux has-session -t jupyter; echo $?"
+    r = IO.select([stdout], [], [], 3)
+    if r.nil?
+      $log.info 'tmux probe timed out'
+      stdin.close
+      waiter.kill
+      next
+    end
+    if stdout.readline.to_i != 0
+      $log.info 'tmux probe failed'
+      stdin.close
+      waiter.kill
+      next
+    end
+
     sleep 10
     probed_ok = false
     loop do
@@ -69,7 +85,6 @@ $poker = Thread.new do
           raise Errno::ETIMEDOUT.new if r.nil?
           line = sock.read_nonblock(1024)
           if line =~ /^HTTP[\/]1.[01] [0-9]+ [A-Za-z ]+\r\n/
-            tcp_ok = true
             if not probed_ok
               $log.info 'probe ok!'
               $lock.synchronize do
@@ -83,16 +98,31 @@ $poker = Thread.new do
             raise 'bad response from server'
           end
         end
+        if not waiter.alive?
+          $log.info("ssh connection died but TCP is still working")
+          stdin, stdout, stderr, waiter = Open3.popen3('ssh', 'gpu')
+        end
       rescue Exception => e
         $log.info("TCP probe failed: #{e.inspect}")
-        output, status = Open3.capture2e('ssh', 'gpu', 'tmux has-session -t jupyter')
-        if status.exitstatus != 0
-          $log.info 'no jupyter-lab process running on the other side'
-          break
-        end
+        break if not waiter.alive?
+      end
+      stdin.puts "tmux has-session -t jupyter; echo $?"
+      r = IO.select([stdout], [], [], 3)
+      if r.nil?
+        $log.info 'tmux probe timed out'
+        break
+      end
+      if stdout.readline.to_i != 0
+        $log.info 'tmux probe failed'
+        break
       end
       sleep (probed_ok ? 30 : 10)
     end
+
+    stdin.close
+    stdout.close
+    stderr.close
+    waiter.kill
 
     $lock.synchronize do
       $state = :dead
@@ -105,8 +135,15 @@ end
 class Application
   def call(env)
     req = Rack::Request.new(env)
+
+    poke = false
+    uri = req.get_header('HTTP_X_ORIGINAL_URI')
+    poke = true if uri == '/' or uri =~ /^\/jupyter\/?$/
+    poke = true if uri =~ /^\/jupyter\/lab\/?$/
+    poke = true if uri =~ /^\/jupyter\/lab\/tree/
+
     info = $lock.synchronize do
-      $lastreq = Time.now
+      $lastreq = Time.now if poke
       {:state => $state, :upstream => $upstream, :token => $token}
     end
     $poke.signal if info[:state] == :sleep

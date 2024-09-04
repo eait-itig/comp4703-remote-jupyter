@@ -1,5 +1,5 @@
 [Unit]
-Description=monitors and starts remote jupyter notebook
+Description=nginx auth filter to auto-start remote Jupyter notebook
 After=network.target
 
 [Service]
