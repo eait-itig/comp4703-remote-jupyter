@@ -119,16 +119,16 @@ $poker = Thread.new do
       sleep (probed_ok ? 30 : 10)
     end
 
-    stdin.close
-    stdout.close
-    stderr.close
-    waiter.kill
-
     $lock.synchronize do
       $state = :dead
       $upstream = nil
       $token = nil
     end
+
+    stdin.close
+    stdout.close
+    stderr.close
+    waiter.kill
   end
 end
 
@@ -146,7 +146,7 @@ class Application
       $lastreq = Time.now if poke
       {:state => $state, :upstream => $upstream, :token => $token}
     end
-    $poke.signal if info[:state] == :sleep
+    $poke.signal if poke
 
     hdrs = {}
     hdrs['Content-Type'] = 'text/plain'
