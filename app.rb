@@ -136,6 +136,13 @@ class Application
   def call(env)
     req = Rack::Request.new(env)
 
+    authz = req.get_header('HTTP_AUTHORIZATION')
+    if authz == 'none'
+      html = File.new('/usr/share/nginx/html/jupyter-502.html').read
+      hdrs = {'Content-Type' => 'text/html'}
+      return [200, hdrs, [html]]
+    end
+
     poke = false
     uri = req.get_header('HTTP_X_ORIGINAL_URI')
     poke = true if uri == '/' or uri =~ /^\/jupyter\/?$/
@@ -150,7 +157,7 @@ class Application
 
     hdrs = {}
     hdrs['Content-Type'] = 'text/plain'
-    hdrs['X-Upstream'] = info[:upstream] || '127.0.0.1:10'
+    hdrs['X-Upstream'] = info[:upstream] || 'unix:/run/remote-jupyter.sock'
     hdrs['X-Authz'] = info[:token] ? "token #{info[:token]}" : "none"
     hdrs['X-State'] = info[:state].to_s
     [200, hdrs, [info[:state].to_s, "\r\n"] ]
