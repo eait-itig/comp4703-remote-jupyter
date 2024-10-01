@@ -38,7 +38,12 @@ $poker = Thread.new do
       "/usr/bin/ruby -e 'require \"socket\"; require \"json\";
       puts JSON.dump(Socket.getifaddrs.reject { |i| !i.addr.ip? }.
       map { |i| {name: i.name, addr: i.addr.ip_address} })'")
-    next if status.exitstatus != 0
+    if status.exitstatus != 0
+      # we are probably out of quota, so throttle hard
+      sleep 30
+      $lock.synchronize { $lastreq = Time.now - 600 }
+      next
+    end
     remifaddrs = JSON.parse(output, symbolize_names: true)
     remif = remifaddrs.find { |a| a[:addr] =~ /^100[.]64[.]/ }
     next if remif.nil?
